@@ -1,673 +1,269 @@
-# AI Credit Risk Platform
+## Major Design Decisions
 
-AI-powered credit risk decision-support platform built using the **Home Credit Default Risk** dataset.
+The implementation was intentionally kept lightweight and modular so the complete platform can be understood, executed, and evaluated without unnecessary infrastructure.
 
-The platform combines **exploratory data analysis, machine learning, explainable AI, natural-language querying, Streamlit, and Docker** in a single end-to-end application.
-
----
-
-## Overview
-
-The platform is designed to support credit-risk analysis at both portfolio and applicant level.
-
-It enables users to:
-
-- understand the credit portfolio through business-focused EDA
-- predict applicant probability of default
-- classify applicants into Low, Medium, and High risk
-- explain individual predictions using SHAP
-- identify global model risk drivers
-- interact with portfolio data through natural-language questions
-- execute validated read-only SQL queries through a chatbot
-- run the complete application locally or through Docker
+| Decision | Choice | Reason |
+|---|---|---|
+| Predictive model | XGBoost | Strong performance on structured tabular data and direct compatibility with SHAP |
+| Class imbalance | `scale_pos_weight` | Handles the minority default class without generating synthetic applicant records |
+| Data split | 70% train / 10% calibration / 20% test | Separates model fitting, probability calibration, and final evaluation |
+| Probability calibration | Platt / sigmoid calibration | Produces probabilities that are more suitable for user-facing default-risk estimates |
+| Explainability | SHAP | Provides both applicant-level and portfolio-level model explanations |
+| Business rules | Shallow surrogate decision tree | Converts model behaviour into simplified business-readable patterns |
+| Analytical database | SQLite | Lightweight, reproducible and sufficient for the assignment-scale analytical workload |
+| LLM integration | Gemini API | Supports schema-grounded natural-language-to-SQL generation and result summarization |
+| LLM orchestration | Direct Google GenAI SDK | Keeps prompt construction, validation and repair logic explicit and easy to evaluate |
+| UI | Streamlit | Provides a lightweight multi-section interface for the complete workflow |
+| Deployment | Docker + Docker Compose | Enables reproducible one-command execution |
 
 ---
 
-## Core Capabilities
+## Model Evaluation
 
-| Module | Capability |
+The final model is evaluated on the untouched 20% test set.
+
+The evaluation focuses on metrics suitable for an imbalanced credit-default problem.
+
+| Metric | Purpose |
 |---|---|
-| EDA | Dataset summary, data quality, feature categorization, five business insights, five supporting charts |
-| Machine Learning | Applicant default probability prediction using XGBoost |
-| Risk Scoring | Calibrated probability converted to a 0–100 model risk score |
-| Risk Classification | Low / Medium / High applicant risk bands |
-| Explainable AI | Local and global SHAP-based explanations |
-| Business Rules | ML-derived readable decision patterns |
-| Talk-to-Data | Natural-language question to SQL to business insight |
-| SQL Safety | Schema validation and read-only query execution |
-| UI | Streamlit multi-section application |
-| Deployment | Docker Compose and Streamlit deployment |
+| ROC-AUC | Measures overall ranking ability between default and non-default applicants |
+| PR-AUC | Evaluates performance on the minority default class |
+| Precision | Measures how many predicted defaults are actual defaults |
+| Recall | Measures how many actual defaults are identified |
+| F1 Score | Balances precision and recall |
+| Brier Score | Evaluates probability calibration quality |
 
----
+### Final Test Results
 
-## Dataset
-
-This project uses the **Home Credit Default Risk** dataset.
-
-Required files:
-
-```text
-application_train.csv
-application_test.csv
-bureau.csv
-installments_payments.csv
-```
-
-Place them inside:
-
-```text
-data/
-```
-
-Expected structure:
-
-```text
-data/
-├── application_train.csv
-├── application_test.csv
-├── bureau.csv
-└── installments_payments.csv
-```
-
-Raw dataset files are intentionally excluded from the repository.
-
----
-
-## Analytical Dataset
-
-The preprocessing pipeline creates an applicant-level analytical dataset.
-
-| Property | Value |
+| Metric | Result |
 |---|---:|
-| Applicants | 307,511 |
-| Analytical fields | 140 |
-| Unique applicant IDs | 307,511 |
-| Duplicate applicants | 0 |
-| Historical default rate | 8.07% |
+| ROC-AUC | `ADD_FINAL_VALUE` |
+| PR-AUC | `ADD_FINAL_VALUE` |
+| Precision | `ADD_FINAL_VALUE` |
+| Recall | `ADD_FINAL_VALUE` |
+| F1 Score | `ADD_FINAL_VALUE` |
+| Calibrated Brier Score | `ADD_FINAL_VALUE` |
 
-The analytical design maintains:
-
-```text
-One row = One applicant
-```
-
-Bureau and installment-payment records are aggregated by:
-
-```text
-SK_ID_CURR
-```
-
-before joining them to the application data.
+The probability calibration stage is evaluated separately from model ranking so that the probability shown to the user can be interpreted as a model-estimated probability of default rather than only a ranking score.
 
 ---
 
-## Feature Groups
+## Prompt Engineering and Hallucination Control
 
-The platform uses information from multiple credit-risk domains:
+The Talk-to-Data component is designed as a constrained analytical workflow rather than an unrestricted chatbot.
 
-- applicant demographics
-- financial characteristics
-- employment information
-- external credit indicators
-- bureau credit history
-- historical repayment behaviour
-- engineered financial ratios
+### Prompt Grounding
 
-Key engineered features include:
+The SQL-generation prompt provides:
 
-```text
-CREDIT_INCOME_RATIO
-ANNUITY_INCOME_RATIO
-CREDIT_GOODS_RATIO
-EMPLOYMENT_AGE_RATIO
-```
+- the approved SQLite table name
+- available column names
+- business descriptions for important fields
+- distinction between historical outcomes and model predictions
+- explicit SQL safety constraints
+- representative few-shot examples
+- limited recent conversation context
 
-Historical features include:
-
-```text
-BUREAU_CREDIT_COUNT
-BUREAU_ACTIVE_COUNT
-BUREAU_OVERDUE_COUNT
-BUREAU_DEBT_SUM
-AVG_PAYMENT_DELAY
-MAX_PAYMENT_DELAY
-LATE_PAYMENT_RATE
-AVG_PAYMENT_RATIO
-```
-
----
-
-## Business Insights
-
-The EDA layer presents five business-focused findings.
-
-1. **Portfolio Default Level**  
-   The observed historical default rate is approximately **8.07%**, confirming a strongly imbalanced credit-risk problem.
-
-2. **External Credit Indicators**  
-   Historical defaulters show lower median values across external credit indicators.
-
-3. **Employment Stability**  
-   Historical defaulters show shorter median employment history than non-defaulters.
-
-4. **Repayment Behaviour**  
-   Historical defaulters show a higher historical late-payment rate.
-
-5. **Risk Segmentation**  
-   Model-generated Low, Medium, and High risk groups show progressively different observed default behaviour.
-
-The Streamlit EDA page includes five supporting visualizations:
-
-- Applicant Risk Classification
-- Observed Default Rate by Risk Level
-- External Credit Indicators
-- Historical Late-Payment Behaviour
-- Default Rate by Employment Tenure
-
----
-
-## Machine Learning Pipeline
-
-The prediction problem is formulated as binary classification.
-
-```text
-TARGET = 0 → Non-default
-TARGET = 1 → Default
-```
-
-The primary model is:
-
-```text
-XGBoost Classifier
-```
-
-### Data Split
-
-```text
-70% Training
-10% Calibration
-20% Final Test
-```
-
-Stratified splitting is used to preserve the target distribution.
-
-### Class Imbalance
-
-Class imbalance is handled using XGBoost class weighting:
-
-```text
-scale_pos_weight =
-number of non-default applicants
-/
-number of default applicants
-```
-
-This allows the model to learn the minority default class without generating synthetic applicants.
-
-### Evaluation Metrics
-
-The model is evaluated using:
-
-- ROC-AUC
-- PR-AUC
-- Precision
-- Recall
-- F1 Score
-- Brier Score
-
----
-
-## Probability Calibration and Risk Score
-
-The XGBoost model output is calibrated using the dedicated calibration split.
-
-The calibrated probability is stored as:
-
-```text
-MODEL_PD
-```
-
-The user-facing model risk score is:
-
-```text
-Risk Score = MODEL_PD × 100
-```
-
-Applicants are classified into:
-
-```text
-Low
-Medium
-High
-```
-
-risk segments using calibrated probability thresholds.
-
----
-
-## Explainable AI
-
-The platform uses **SHAP** to explain model behaviour.
-
-### Local Explanation
-
-For an individual applicant, the application shows:
-
-- major contributing risk factors
-- whether each factor increases or reduces predicted risk
-- SHAP contribution visualization
-
-### Global Explanation
-
-The application also provides portfolio-level SHAP importance to show which variables most strongly influence model predictions overall.
-
-### ML-Derived Rules
-
-Simplified business-readable decision rules are derived from the trained model to summarize recurring model decision patterns.
-
-These are displayed as interpretable rule conditions with approximate default probability.
-
----
-
-## Talk-to-Data System
-
-The chatbot enables a user to ask portfolio questions in plain English.
-
-Example questions:
-
-```text
-What is the observed default rate?
-```
-
-```text
-How many applicants are in each risk band?
-```
-
-```text
-What is the observed default rate for each risk band?
-```
-
-```text
-Compare historical late-payment behaviour across risk bands.
-```
-
-```text
-What is the average requested credit amount by risk band?
-```
-
-### Workflow
-
-```text
-User Question
-      ↓
-Gemini LLM
-      ↓
-SQL Generation
-      ↓
-SQL Validation
-      ↓
-Read-Only SQLite Execution
-      ↓
-Query Result
-      ↓
-Business-Readable Answer
-```
-
-The system distinguishes between:
+Two fields are deliberately distinguished:
 
 ```text
 TARGET
 ```
 
-which represents the historical observed outcome, and:
+represents the **observed historical default outcome**, while:
 
 ```text
 MODEL_PD
 ```
 
-which represents model-predicted probability of default.
+represents the **model-predicted probability of default**.
 
----
+This distinction prevents the LLM from interpreting predicted risk as an actual historical default rate.
 
-## SQL Validation
+### Few-Shot Query Patterns
 
-Generated SQL is validated before execution.
+The prompt includes at least five representative query patterns covering:
 
-The validation layer enforces:
+1. overall observed default rate
+2. applicant distribution by risk band
+3. observed default rate by risk band
+4. grouped default analysis
+5. historical repayment behaviour by risk band
 
-- one SQL statement only
-- SELECT queries only
-- approved table only
-- approved schema columns only
-- no destructive SQL operations
+### SQL Validation
+
+LLM-generated SQL is validated before execution.
+
+The validator ensures:
+
+- exactly one SQL statement
+- SELECT-only access
+- approved table access
+- approved schema columns
+- no destructive SQL
 - read-only SQLite execution
-- bounded output for detailed row queries
 
-Blocked operations include:
+Detailed row-level queries are bounded to prevent unnecessarily large outputs.
 
-```text
-INSERT
-UPDATE
-DELETE
-DROP
-CREATE
-ALTER
-```
+### Bounded Repair
 
-The analytical table used by the chatbot is:
+If generated SQL fails validation or execution, the system performs only **one controlled repair attempt** using:
 
-```text
-credit_applicants
-```
+- the original business question
+- rejected SQL
+- validation error
+- approved schema
 
----
+This prevents uncontrolled retry loops.
 
-## System Workflow
+### Result Grounding
 
-```text
-Home Credit Raw Data
-        │
-        ▼
-Data Loading and Validation
-        │
-        ▼
-Cleaning and Feature Engineering
-        │
-        ▼
-Applicant-Level Analytical Dataset
-        │
-        ├───────────────┬─────────────────┐
-        ▼               ▼                 ▼
-       EDA         XGBoost Model         SQLite
-                        │                 │
-                        ▼                 ▼
-              Probability Calibration   NL-to-SQL
-                        │                 │
-                        ▼                 ▼
-                  Risk Score        SQL Validation
-                        │                 │
-                        ▼                 ▼
-               Risk Classification   Query Result
-                        │                 │
-                        ▼                 ▼
-                    SHAP            Business Answer
-                        │                 │
-                        └────────┬────────┘
-                                 ▼
-                           Streamlit UI
-```
+The final business response is generated only after successful SQL execution.
+
+The LLM receives the validated query result and is instructed to:
+
+- use only values returned by the database
+- avoid inventing causes
+- distinguish observed and predicted risk
+- avoid interpreting SQL row limits as analytical sample size
 
 ---
 
-## Project Structure
+## Prompt and Token Optimization
 
-```text
-credit_risk_platform/
-├── data/
-├── documents/
-│   └── project_presentation.pdf
-├── notebooks/
-│   ├── eda.ipynb
-│   └── eda.py
-├── src/
-│   ├── data/
-│   │   ├── loader.py
-│   │   └── preprocessor.py
-│   ├── ml/
-│   │   ├── train.py
-│   │   ├── predict.py
-│   │   └── evaluate.py
-│   ├── talk_to_data/
-│   │   ├── nl_to_sql.py
-│   │   ├── query_runner.py
-│   │   └── prompt_templates.py
-│   └── utils/
-│       ├── logger.py
-│       ├── config.py
-│       ├── helpers.py
-│       └── docker_utils.py
-├── sql/
-│   └── schema.sql
-├── models/
-├── app.py
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
-```
+The Talk-to-Data workflow keeps LLM context intentionally compact.
+
+Token usage is reduced through:
+
+- a restricted analytical schema instead of the complete raw Home Credit schema
+- concise business descriptions of approved fields
+- a fixed set of representative few-shot examples
+- only the most recent conversation turns
+- one bounded SQL repair attempt
+- result summarization based on returned rows instead of resending the full underlying dataset
+
+The LLM never receives the complete 307,511-row portfolio.
+
+SQL performs the analytical computation and only the resulting data is provided to the model for summarization.
 
 ---
 
-## Technology Stack
+## ML-Derived Rule Logic
 
-| Layer | Technologies |
-|---|---|
-| Data Processing | Python, Pandas, NumPy |
-| Machine Learning | Scikit-learn, XGBoost |
-| Explainability | SHAP |
-| Data Query Layer | SQLite, SQLGlot |
-| Generative AI | Gemini API |
-| User Interface | Streamlit |
-| Model Persistence | Joblib |
-| Deployment | Docker, Docker Compose |
+The primary predictive model remains XGBoost.
+
+A shallow global surrogate decision tree is used only to extract simplified decision patterns from the trained model.
+
+The rule-generation process is:
+
+```text
+Trained XGBoost Model
+        ↓
+Model Probability Predictions
+        ↓
+Most Influential Model Features
+        ↓
+Shallow Decision Tree Approximation
+        ↓
+Readable IF / THEN Patterns
+        ↓
+Displayed as ML-Derived Business Rules
+```
+
+The surrogate does not replace the primary model and its output is not used as the final applicant prediction.
+
+Its role is to make recurring model behaviour easier to interpret for business users.
+
+### Example Rule Format
+
+```text
+IF
+    Feature A <= threshold
+AND
+    Feature B > threshold
+
+THEN
+    Approximate model probability of default = XX%
+```
+
+Actual rules displayed in the application are derived from the trained model artifacts.
 
 ---
 
-## Local Setup
+## Sample Application Outputs
 
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/Rajyasri24/AI-Credit-Risk-Platform.git
-```
-
-```bash
-cd AI-Credit-Risk-Platform
-```
-
-### 2. Create a virtual environment
-
-Windows:
-
-```bash
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-```
-
-Linux/macOS:
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Add the dataset
-
-Place:
+### Applicant Risk Prediction
 
 ```text
-application_train.csv
-application_test.csv
-bureau.csv
-installments_payments.csv
+Applicant ID
+    ↓
+Probability of Default
+    ↓
+Risk Score (0–100)
+    ↓
+Low / Medium / High Risk
 ```
 
-inside:
+Example presentation:
 
 ```text
-data/
+Probability of Default: 12.4%
+Risk Score: 12.4 / 100
+Risk Classification: Medium
 ```
 
-### 5. Configure environment variables
+The displayed values for an actual applicant are calculated from the saved model artifacts at runtime.
 
-Create:
+### SHAP Explanation
+
+For an applicant, the platform presents the strongest model drivers as:
 
 ```text
-.env
+Feature                       Effect
+------------------------------------------------
+External Credit Indicator     Reduces predicted risk
+Late-Payment Behaviour        Increases predicted risk
+Employment History            Reduces predicted risk
 ```
 
-from:
+A SHAP contribution chart accompanies the readable explanation.
+
+### Talk-to-Data
+
+Example user question:
 
 ```text
-.env.example
+What is the observed default rate?
 ```
 
-Add:
+Example SQL structure:
 
-```env
-GEMINI_API_KEY=your_api_key
-LLM_MODEL=gemini-3.6-flash
+```sql
+SELECT
+    COUNT(*) AS total_applicants,
+    SUM(TARGET) AS defaulted_applicants,
+    ROUND(AVG(TARGET) * 100, 2) AS default_rate_pct
+FROM credit_applicants;
 ```
+
+Business output:
+
+```text
+The observed historical default rate is 8.07%.
+```
+
+The response is generated only after the SQL query has been validated and executed.
 
 ---
 
-## Run the Pipeline
+## Future Improvements
 
-### Preprocess data
+Potential extensions include:
 
-```bash
-python -m src.data.preprocessor
-```
-
-### Train model
-
-```bash
-python -m src.ml.train
-```
-
-### Build analytical database
-
-```bash
-python -m src.talk_to_data.query_runner
-```
-
-### Start application
-
-```bash
-streamlit run app.py
-```
-
-Open:
-
-```text
-http://localhost:8501
-```
-
----
-
-## Docker
-
-The complete application can be started with:
-
-```bash
-docker compose up --build
-```
-
-Open:
-
-```text
-http://localhost:8501
-```
-
-Stop the application:
-
-```bash
-docker compose down
-```
-
----
-
-## Application Usage
-
-### EDA
-
-Use the EDA section to review:
-
-- portfolio KPIs
-- five business insights
-- five visualizations
-- feature categories
-- data quality summary
-
-### Machine Learning
-
-Enter a valid:
-
-```text
-SK_ID_CURR
-```
-
-to view:
-
-- probability of default
-- model risk score
-- Low / Medium / High classification
-- applicant financial profile
-- SHAP-based explanation
-- portfolio-level model drivers
-- ML-derived business rules
-
-### Chatbot
-
-The chatbot supports two modes:
-
-- select a ready-made portfolio question
-- enter a custom natural-language question
-
-The generated SQL can be viewed from the optional SQL section.
-
----
-
-## Environment Variables
-
-| Variable | Purpose |
-|---|---|
-| `GEMINI_API_KEY` | Gemini API authentication |
-| `LLM_MODEL` | Gemini model used for Talk-to-Data |
-
-Example:
-
-```env
-GEMINI_API_KEY=your_api_key
-LLM_MODEL=gemini-3.6-flash
-```
-
-Never commit the real `.env` file.
-
----
-
-## Deployment
-
-The platform supports:
-
-```text
-Local Python
-Docker Compose
-Streamlit
-```
-
-Application entry point:
-
-```text
-app.py
-```
-
-Docker entry point:
-
-```bash
-docker compose up --build
-```
-
-Streamlit entry point:
-
-```bash
-streamlit run app.py
-```
+- external policy-defined risk thresholds for production lending environments
+- model monitoring and drift detection
+- authentication and role-based access control
+- additional portfolio datasets and credit-history sources
+- persistent conversational history
+- cloud-hosted analytical database for higher concurrency
+- automated model retraining and model registry integration
