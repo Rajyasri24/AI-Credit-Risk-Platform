@@ -1340,4 +1340,4 @@ https://github.com/Rajyasri24/AI-Credit-Risk-Platform
 
 **Rajyasri S**  
 M.Sc. Data Science  
-CHRIST (Deemed to be University), Bengaluru
+CHRIST University, Bengaluru
