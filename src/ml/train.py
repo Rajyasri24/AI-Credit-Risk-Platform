@@ -5,16 +5,6 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    average_precision_score,
-    brier_score_loss,
-    confusion_matrix,
-    f1_score,
-    log_loss,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
@@ -22,18 +12,21 @@ from sklearn.preprocessing import OneHotEncoder
 from xgboost import XGBClassifier
 
 from src.ml.evaluate import (
+    build_surrogate_tree,
+    calculate_band_performance,
     calculate_global_shap,
-    build_global_surrogate_tree,
+    evaluate_model,
+    select_operating_threshold,
 )
 
 from src.utils.config import (
     ANALYTICAL_DATA,
-    MODEL_PATH,
-    PREPROCESSOR_PATH,
     METADATA_PATH,
-    SURROGATE_PATH,
+    MODEL_PATH,
     MODELS_DIR,
+    PREPROCESSOR_PATH,
     RANDOM_STATE,
+    SURROGATE_PATH,
 )
 
 from src.utils.logger import get_logger
@@ -43,35 +36,24 @@ logger = get_logger(__name__)
 
 
 NUMERIC_FEATURES = [
-    # Financial profile
     "AMT_INCOME_TOTAL",
     "AMT_CREDIT",
     "AMT_ANNUITY",
     "AMT_GOODS_PRICE",
-
-    # Household profile
     "CNT_CHILDREN",
     "CNT_FAM_MEMBERS",
-
-    # Employment and demographic context
     "AGE_YEARS",
     "EMPLOYMENT_YEARS",
     "REGION_POPULATION_RELATIVE",
     "REGION_RATING_CLIENT",
     "REGION_RATING_CLIENT_W_CITY",
-
-    # External credit indicators
     "EXT_SOURCE_1",
     "EXT_SOURCE_2",
     "EXT_SOURCE_3",
-
-    # Engineered financial ratios
     "CREDIT_INCOME_RATIO",
     "ANNUITY_INCOME_RATIO",
     "CREDIT_GOODS_RATIO",
     "EMPLOYMENT_AGE_RATIO",
-
-    # Bureau credit history
     "BUREAU_CREDIT_COUNT",
     "BUREAU_ACTIVE_COUNT",
     "BUREAU_CLOSED_COUNT",
@@ -79,8 +61,6 @@ NUMERIC_FEATURES = [
     "BUREAU_CREDIT_SUM",
     "BUREAU_DEBT_SUM",
     "BUREAU_OVERDUE_SUM",
-
-    # Historical repayment behaviour
     "INSTALLMENT_COUNT",
     "AVG_PAYMENT_DELAY",
     "MAX_PAYMENT_DELAY",
@@ -108,16 +88,63 @@ MODEL_FEATURES = (
 )
 
 
+def build_preprocessor():
+    numeric_pipeline = Pipeline(
+        [
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="median",
+                    add_indicator=True,
+                ),
+            )
+        ]
+    )
+
+    categorical_pipeline = Pipeline(
+        [
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="constant",
+                    fill_value="Unknown",
+                ),
+            ),
+            (
+                "encoder",
+                OneHotEncoder(
+                    handle_unknown="ignore",
+                    sparse_output=True,
+                ),
+            ),
+        ]
+    )
+
+    return ColumnTransformer(
+        [
+            (
+                "numeric",
+                numeric_pipeline,
+                NUMERIC_FEATURES,
+            ),
+            (
+                "categorical",
+                categorical_pipeline,
+                CATEGORICAL_FEATURES,
+            ),
+        ]
+    )
+
+
 def split_data(df):
     X = df[
         MODEL_FEATURES
-    ].copy()
+    ]
 
     y = df[
         "TARGET"
-    ].copy()
+    ]
 
-    # Reserve a completely untouched 20% final test set.
     (
         X_dev,
         X_test,
@@ -131,7 +158,6 @@ def split_data(df):
         random_state=RANDOM_STATE,
     )
 
-    # 12.5% of the remaining 80% = 10% of full data.
     (
         X_train,
         X_cal,
@@ -155,55 +181,6 @@ def split_data(df):
     )
 
 
-def build_preprocessor():
-    numeric_pipeline = Pipeline(
-        steps=[
-            (
-                "imputer",
-                SimpleImputer(
-                    strategy="median",
-                    add_indicator=True,
-                ),
-            ),
-        ]
-    )
-
-    categorical_pipeline = Pipeline(
-        steps=[
-            (
-                "imputer",
-                SimpleImputer(
-                    strategy="constant",
-                    fill_value="Unknown",
-                ),
-            ),
-            (
-                "onehot",
-                OneHotEncoder(
-                    handle_unknown="ignore",
-                    sparse_output=True,
-                ),
-            ),
-        ]
-    )
-
-    return ColumnTransformer(
-        transformers=[
-            (
-                "numeric",
-                numeric_pipeline,
-                NUMERIC_FEATURES,
-            ),
-            (
-                "categorical",
-                categorical_pipeline,
-                CATEGORICAL_FEATURES,
-            ),
-        ],
-        remainder="drop",
-    )
-
-
 def calibrated_probability(
     model,
     calibrator,
@@ -214,118 +191,26 @@ def calibrated_probability(
         output_margin=True,
     )
 
-    return calibrator.predict_proba(
-        margins.reshape(-1, 1)
-    )[:, 1]
-
-
-def assign_band(
-    probability,
-    low_threshold,
-    medium_threshold,
-):
-    if probability <= low_threshold:
-        return "Low"
-
-    if probability <= medium_threshold:
-        return "Medium"
-
-    return "High"
-
-
-def calculate_band_performance(
-    y_true,
-    probability,
-    low_threshold,
-    medium_threshold,
-):
-    evaluation = pd.DataFrame(
-        {
-            "TARGET": np.asarray(y_true),
-            "PD": probability,
-        }
-    )
-
-    evaluation["RISK_BAND"] = [
-        assign_band(
-            p,
-            low_threshold,
-            medium_threshold,
-        )
-        for p in evaluation["PD"]
-    ]
-
-    summary = (
-        evaluation
-        .groupby("RISK_BAND")
-        .agg(
-            Applicants=(
-                "TARGET",
-                "size",
-            ),
-            Observed_Default_Rate=(
-                "TARGET",
-                "mean",
-            ),
-            Average_PD=(
-                "PD",
-                "mean",
-            ),
-        )
-        .reindex(
-            [
-                "Low",
-                "Medium",
-                "High",
-            ]
-        )
-    )
-
-    summary[
-        "Observed_Default_Rate"
-    ] *= 100
-
-    summary[
-        "Average_PD"
-    ] *= 100
-
     return (
-        summary
-        .round(3)
-        .reset_index()
-        .to_dict(
-            orient="records"
-        )
+        calibrator
+        .predict_proba(
+            margins.reshape(
+                -1,
+                1,
+            )
+        )[:, 1]
     )
 
 
 def train():
-    logger.info(
-        "Loading analytical dataset."
-    )
-
     if not ANALYTICAL_DATA.exists():
         raise FileNotFoundError(
-            "credit_applicants.parquet was not found. "
-            "Run preprocessing first:\n"
-            "python -m src.data.preprocessor"
+            "Run preprocessing first."
         )
 
     df = pd.read_parquet(
         ANALYTICAL_DATA
     )
-
-    missing_features = [
-        feature
-        for feature in MODEL_FEATURES
-        if feature not in df.columns
-    ]
-
-    if missing_features:
-        raise ValueError(
-            "Required model features are missing: "
-            f"{missing_features}"
-        )
 
     (
         X_train,
@@ -343,59 +228,38 @@ def train():
         len(X_test),
     )
 
-    logger.info(
-        "Train default rate=%.4f | "
-        "Calibration default rate=%.4f | "
-        "Test default rate=%.4f",
-        y_train.mean(),
-        y_cal.mean(),
-        y_test.mean(),
-    )
-
     preprocessor = (
         build_preprocessor()
     )
 
-    logger.info(
-        "Fitting preprocessing pipeline."
-    )
-
     X_train_t = (
-        preprocessor
-        .fit_transform(
+        preprocessor.fit_transform(
             X_train
         )
     )
 
     X_cal_t = (
-        preprocessor
-        .transform(
+        preprocessor.transform(
             X_cal
         )
     )
 
     X_test_t = (
-        preprocessor
-        .transform(
+        preprocessor.transform(
             X_test
         )
     )
 
-    negative = int(
-        (y_train == 0).sum()
-    )
+    negative = (
+        y_train == 0
+    ).sum()
 
-    positive = int(
-        (y_train == 1).sum()
-    )
+    positive = (
+        y_train == 1
+    ).sum()
 
     scale_pos_weight = (
         negative / positive
-    )
-
-    logger.info(
-        "scale_pos_weight=%.3f",
-        scale_pos_weight,
     )
 
     model = XGBClassifier(
@@ -405,16 +269,18 @@ def train():
         min_child_weight=5,
         subsample=0.80,
         colsample_bytree=0.80,
+        scale_pos_weight=(
+            scale_pos_weight
+        ),
         objective="binary:logistic",
         eval_metric="auc",
-        scale_pos_weight=scale_pos_weight,
         tree_method="hist",
         random_state=RANDOM_STATE,
         n_jobs=-1,
     )
 
     logger.info(
-        "Training XGBoost model."
+        "Training XGBoost."
     )
 
     model.fit(
@@ -422,14 +288,11 @@ def train():
         y_train,
     )
 
-    # Dedicated 10% calibration set.
-    logger.info(
-        "Fitting Platt probability calibrator."
-    )
-
-    calibration_margin = model.predict(
-        X_cal_t,
-        output_margin=True,
+    calibration_margin = (
+        model.predict(
+            X_cal_t,
+            output_margin=True,
+        )
     )
 
     calibrator = LogisticRegression(
@@ -438,21 +301,28 @@ def train():
     )
 
     calibrator.fit(
-        calibration_margin.reshape(-1, 1),
+        calibration_margin.reshape(
+            -1,
+            1,
+        ),
         y_cal,
     )
 
     calibration_pd = (
-        calibrator
-        .predict_proba(
-            calibration_margin.reshape(
-                -1,
-                1,
-            )
-        )[:, 1]
+        calibrated_probability(
+            model,
+            calibrator,
+            X_cal_t,
+        )
     )
 
-    # Data-derived Low / Medium / High thresholds.
+    operating_threshold = (
+        select_operating_threshold(
+            y_cal,
+            calibration_pd,
+        )
+    )
+
     low_threshold = float(
         np.quantile(
             calibration_pd,
@@ -467,99 +337,26 @@ def train():
         )
     )
 
-    logger.info(
-        "Risk thresholds | "
-        "Low <= %.4f | "
-        "Medium <= %.4f | "
-        "High > %.4f",
-        low_threshold,
-        medium_threshold,
+    test_pd = (
+        calibrated_probability(
+            model,
+            calibrator,
+            X_test_t,
+        )
     )
 
-    # Final untouched test evaluation.
-    raw_test_pd = (
-        model.predict_proba(
-            X_test_t
-        )[:, 1]
+    metrics = evaluate_model(
+        y_test,
+        test_pd,
+        operating_threshold,
     )
-
-    test_pd = calibrated_probability(
-        model,
-        calibrator,
-        X_test_t,
-    )
-
-    binary_prediction = (
-        test_pd >= 0.50
-    ).astype(int)
-
-    metrics = {
-        "roc_auc": float(
-            roc_auc_score(
-                y_test,
-                test_pd,
-            )
-        ),
-        "pr_auc": float(
-            average_precision_score(
-                y_test,
-                test_pd,
-            )
-        ),
-        "precision_at_0_5": float(
-            precision_score(
-                y_test,
-                binary_prediction,
-                zero_division=0,
-            )
-        ),
-        "recall_at_0_5": float(
-            recall_score(
-                y_test,
-                binary_prediction,
-                zero_division=0,
-            )
-        ),
-        "f1_at_0_5": float(
-            f1_score(
-                y_test,
-                binary_prediction,
-                zero_division=0,
-            )
-        ),
-        "brier_raw": float(
-            brier_score_loss(
-                y_test,
-                raw_test_pd,
-            )
-        ),
-        "brier_calibrated": float(
-            brier_score_loss(
-                y_test,
-                test_pd,
-            )
-        ),
-        "log_loss_calibrated": float(
-            log_loss(
-                y_test,
-                test_pd,
-            )
-        ),
-        "confusion_matrix": (
-            confusion_matrix(
-                y_test,
-                binary_prediction,
-            )
-            .tolist()
-        ),
-    }
 
     band_performance = (
         calculate_band_performance(
-            y_true=y_test,
-            probability=test_pd,
-            low_threshold=low_threshold,
-            medium_threshold=medium_threshold,
+            y_test,
+            test_pd,
+            low_threshold,
+            medium_threshold,
         )
     )
 
@@ -569,33 +366,24 @@ def train():
         .tolist()
     )
 
-    logger.info(
-        "Calculating global SHAP importance."
-    )
-
-    shap_summary = (
+    global_shap = (
         calculate_global_shap(
-            model=model,
-            X=X_test_t,
-            feature_names=feature_names,
-            sample_size=2000,
+            model,
+            X_cal_t,
+            feature_names,
         )
     )
 
-    logger.info(
-        "Training Global Surrogate Decision Tree."
-    )
-
     (
-        surrogate_model,
-        surrogate_information,
-    ) = build_global_surrogate_tree(
-        X_cal=X_cal_t,
-        X_test=X_test_t,
-        calibration_pd=calibration_pd,
-        test_pd=test_pd,
-        feature_names=feature_names,
-        shap_summary=shap_summary,
+        surrogate,
+        surrogate_info,
+    ) = build_surrogate_tree(
+        X_cal_t,
+        X_test_t,
+        calibration_pd,
+        test_pd,
+        feature_names,
+        global_shap,
     )
 
     MODELS_DIR.mkdir(
@@ -614,50 +402,47 @@ def train():
     )
 
     joblib.dump(
-        surrogate_model,
+        surrogate,
         SURROGATE_PATH,
     )
 
     metadata = {
-        "model_features": MODEL_FEATURES,
-        "numeric_features": NUMERIC_FEATURES,
-        "categorical_features": CATEGORICAL_FEATURES,
-
+        "model_features": (
+            MODEL_FEATURES
+        ),
+        "numeric_features": (
+            NUMERIC_FEATURES
+        ),
+        "categorical_features": (
+            CATEGORICAL_FEATURES
+        ),
         "calibrator": calibrator,
-
         "scale_pos_weight": float(
             scale_pos_weight
         ),
-
+        "operating_threshold": (
+            operating_threshold
+        ),
         "risk_thresholds": {
             "low_max": low_threshold,
-            "medium_max": medium_threshold,
+            "medium_max": (
+                medium_threshold
+            ),
         },
-
         "metrics": metrics,
-
         "band_performance": (
             band_performance
         ),
-
         "global_shap": (
-            shap_summary
+            global_shap
         ),
-
         "global_surrogate_tree": (
-            surrogate_information
+            surrogate_info
         ),
-
         "split": {
-            "train": int(
-                len(X_train)
-            ),
-            "calibration": int(
-                len(X_cal)
-            ),
-            "test": int(
-                len(X_test)
-            ),
+            "train": len(X_train),
+            "calibration": len(X_cal),
+            "test": len(X_test),
         },
     }
 
@@ -666,30 +451,12 @@ def train():
         METADATA_PATH,
     )
 
-    print(
-        "\nMODEL TRAINING COMPLETE"
-    )
-
-    print("=" * 60)
+    print("\nMODEL TRAINING COMPLETE")
+    print("=" * 50)
 
     print(
-        f"Train rows: "
-        f"{len(X_train):,}"
-    )
-
-    print(
-        f"Calibration rows: "
-        f"{len(X_cal):,}"
-    )
-
-    print(
-        f"Test rows: "
-        f"{len(X_test):,}"
-    )
-
-    print(
-        f"scale_pos_weight: "
-        f"{scale_pos_weight:.3f}"
+        f"Operating threshold: "
+        f"{operating_threshold:.4f}"
     )
 
     print(
@@ -703,53 +470,32 @@ def train():
     )
 
     print(
-        f"Precision @ 0.5: "
-        f"{metrics['precision_at_0_5']:.4f}"
+        f"PR-AUC lift: "
+        f"{metrics['pr_auc_lift']:.2f}x"
     )
 
     print(
-        f"Recall @ 0.5: "
-        f"{metrics['recall_at_0_5']:.4f}"
+        f"Precision: "
+        f"{metrics['precision']:.4f}"
     )
 
     print(
-        f"F1 @ 0.5: "
-        f"{metrics['f1_at_0_5']:.4f}"
+        f"Recall: "
+        f"{metrics['recall']:.4f}"
     )
 
     print(
-        f"Brier raw: "
-        f"{metrics['brier_raw']:.4f}"
+        f"F1: "
+        f"{metrics['f1']:.4f}"
     )
 
     print(
-        f"Brier calibrated: "
+        f"Brier score: "
         f"{metrics['brier_calibrated']:.4f}"
     )
 
     print(
-        "\nDATA-DERIVED RISK THRESHOLDS"
-    )
-
-    print(
-        f"Low    : PD <= "
-        f"{low_threshold:.4f}"
-    )
-
-    print(
-        f"Medium : "
-        f"{low_threshold:.4f} < "
-        f"PD <= "
-        f"{medium_threshold:.4f}"
-    )
-
-    print(
-        f"High   : PD > "
-        f"{medium_threshold:.4f}"
-    )
-
-    print(
-        "\nTEST-SET BAND PERFORMANCE"
+        "\nTEST-SET RISK BAND VALIDATION"
     )
 
     print(
@@ -758,62 +504,6 @@ def train():
         ).to_string(
             index=False
         )
-    )
-
-    print(
-        "\nGLOBAL SURROGATE DECISION TREE"
-    )
-
-    print(
-        "Fidelity R²:",
-        round(
-            surrogate_information[
-                "fidelity_r2"
-            ],
-            4,
-        ),
-    )
-
-    print(
-        "Fidelity MAE:",
-        round(
-            surrogate_information[
-                "fidelity_mae"
-            ],
-            4,
-        ),
-    )
-
-    print(
-        "\nTOP GLOBAL SHAP FEATURES"
-    )
-
-    for item in (
-        shap_summary[:10]
-    ):
-        print(
-            f"- {item['feature']}: "
-            f"{item['importance']:.6f}"
-        )
-
-    print(
-        "\nSaved model artifacts:"
-    )
-
-    print(
-        f"- {MODEL_PATH.name}"
-    )
-
-    print(
-        f"- {PREPROCESSOR_PATH.name}"
-    )
-
-    print(
-        f"- {METADATA_PATH.name}"
-    )
-
-    print(
-        f"- {SURROGATE_PATH.name}"
     )
 
 

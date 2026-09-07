@@ -3,34 +3,30 @@ import numpy as np
 import pandas as pd
 import shap
 
+from src.ml.evaluate import (
+    readable_feature_name,
+)
+
 from src.utils.config import (
+    METADATA_PATH,
     MODEL_PATH,
     PREPROCESSOR_PATH,
-    METADATA_PATH,
 )
 
 
 def load_artifacts():
-    model = joblib.load(
-        MODEL_PATH
-    )
-
-    preprocessor = joblib.load(
-        PREPROCESSOR_PATH
-    )
-
-    metadata = joblib.load(
-        METADATA_PATH
-    )
-
     return (
-        model,
-        preprocessor,
-        metadata,
+        joblib.load(MODEL_PATH),
+        joblib.load(
+            PREPROCESSOR_PATH
+        ),
+        joblib.load(
+            METADATA_PATH
+        ),
     )
 
 
-def assign_risk_band(
+def get_risk_band(
     probability,
     thresholds,
 ):
@@ -47,29 +43,6 @@ def assign_risk_band(
     return "High"
 
 
-def clean_feature_name(name):
-    name = name.replace(
-        "numeric__",
-        "",
-    )
-
-    name = name.replace(
-        "categorical__",
-        "",
-    )
-
-    name = name.replace(
-        "missingindicator_",
-        "Missing value indicator: ",
-    )
-
-    return (
-        name
-        .replace("_", " ")
-        .strip()
-    )
-
-
 def predict_applicant(
     applicant,
 ):
@@ -84,123 +57,122 @@ def predict_applicant(
         pd.Series,
     ):
         applicant = (
-            applicant
-            .to_frame()
-            .T
+            applicant.to_frame().T
+        )
+
+    elif isinstance(
+        applicant,
+        dict,
+    ):
+        applicant = pd.DataFrame(
+            [applicant]
         )
 
     X = applicant[
-        metadata["model_features"]
-    ].copy()
+        metadata[
+            "model_features"
+        ]
+    ]
 
-    X_transformed = (
-        preprocessor
-        .transform(X)
-    )
-
-    raw_probability = (
-        model
-        .predict_proba(
-            X_transformed
-        )[0, 1]
+    X_t = preprocessor.transform(
+        X
     )
 
     margin = model.predict(
-        X_transformed,
+        X_t,
         output_margin=True,
     )
 
-    probability = (
+    probability = float(
         metadata[
             "calibrator"
         ]
         .predict_proba(
-            margin.reshape(
-                -1,
-                1,
-            )
+            margin.reshape(-1, 1)
         )[0, 1]
     )
 
-    risk_band = (
-        assign_risk_band(
-            probability,
-            metadata[
-                "risk_thresholds"
-            ],
-        )
+    risk_band = get_risk_band(
+        probability,
+        metadata[
+            "risk_thresholds"
+        ],
     )
 
     feature_names = (
         preprocessor
         .get_feature_names_out()
+        .tolist()
     )
 
-    if hasattr(
-        X_transformed,
-        "toarray",
-    ):
-        shap_input = (
-            X_transformed
-            .toarray()
+    X_shap = (
+        X_t.toarray()
+        if hasattr(
+            X_t,
+            "toarray",
         )
-    else:
-        shap_input = np.asarray(
-            X_transformed
-        )
+        else np.asarray(X_t)
+    )
 
-    explainer = (
+    values = (
         shap.TreeExplainer(
             model
         )
+        .shap_values(
+            X_shap
+        )
     )
 
-    shap_values = np.asarray(
-        explainer.shap_values(
-            shap_input
-        )
-    )[0]
+    if isinstance(
+        values,
+        list,
+    ):
+        values = values[-1]
+
+    if values.ndim == 3:
+        values = values[
+            :,
+            :,
+            -1,
+        ]
+
+    values = values[0]
 
     top_indices = np.argsort(
-        np.abs(
-            shap_values
-        )
+        np.abs(values)
     )[::-1][:5]
 
-    drivers = []
-
-    for index in top_indices:
-        contribution = float(
-            shap_values[index]
-        )
-
-        drivers.append(
-            {
-                "feature": clean_feature_name(
-                    feature_names[
-                        index
-                    ]
-                ),
-                "shap_value": contribution,
-                "direction": (
-                    "Increases predicted risk"
-                    if contribution > 0
-                    else
-                    "Reduces predicted risk"
-                ),
-            }
-        )
+    drivers = [
+        {
+            "feature": (
+                readable_feature_name(
+                    feature_names[index]
+                )
+            ),
+            "shap_value": float(
+                values[index]
+            ),
+            "direction": (
+                "Increases risk"
+                if values[index] > 0
+                else "Reduces risk"
+            ),
+        }
+        for index
+        in top_indices
+    ]
 
     return {
-        "raw_probability": float(
-            raw_probability
-        ),
-        "default_probability": float(
+        "default_probability": (
             probability
         ),
-        "risk_score": float(
+        "risk_score": (
             probability * 100
         ),
-        "risk_band": risk_band,
-        "drivers": drivers,
+        "risk_band": (
+            risk_band
+        ),
+        "drivers": (
+            drivers
+        ),
     }

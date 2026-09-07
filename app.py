@@ -493,17 +493,17 @@ elif page == "Machine Learning":
 
     m3.metric(
         "Recall",
-        f"{metrics['recall_at_0_5']:.3f}",
+        f"{metrics['recall']:.3f}",
     )
 
     m4.metric(
         "Precision",
-        f"{metrics['precision_at_0_5']:.3f}",
+        f"{metrics['precision']:.3f}",
     )
 
     m5.metric(
         "F1 Score",
-        f"{metrics['f1_at_0_5']:.3f}",
+        f"{metrics['f1']:.3f}",
     )
 
     st.caption(
@@ -512,30 +512,27 @@ elif page == "Machine Learning":
 
     st.subheader("Risk-Level Validation")
 
-    validation = (
-        df.groupby("RISK_BAND")
-        .agg(
-            Applicants=("TARGET", "size"),
-            Observed_Default_Rate=("TARGET", "mean"),
-            Average_PD=("MODEL_PD", "mean"),
-        )
-        .reindex(["Low", "Medium", "High"])
+    validation = pd.DataFrame(
+    metadata["band_performance"]
     )
 
-    validation["Observed_Default_Rate"] *= 100
-    validation["Average_PD"] *= 100
-
-    validation.columns = [
-        "Applicants",
-        "Observed Default Rate (%)",
-        "Average Predicted Default (%)",
-    ]
+    validation = validation.rename(
+    columns={
+        "RISK_BAND": "Risk Band",
+        "Observed_Default_Rate": "Observed Default Rate (%)",
+        "Average_PD": "Average Predicted Default (%)",
+    }
+    )
 
     st.dataframe(
-        validation.round(2),
-        use_container_width=True,
-    )
+    validation,
+    hide_index=True,
+    use_container_width=True,
+)
 
+    st.caption(
+    "Risk-level validation is evaluated on the untouched 20% test set."
+)
     st.divider()
 
     st.subheader("Applicant Risk Assessment")
