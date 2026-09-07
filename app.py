@@ -3,21 +3,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-
 import sqlite3
-from src.utils.config import DATABASE_PATH
 
 from src.ml.predict import load_artifacts, predict_applicant
 from src.talk_to_data.nl_to_sql import ask_credit_data
 from src.utils.config import (ANALYTICAL_DATA,DATABASE_PATH,METADATA_PATH,)
-
+from src.utils.runtime_assets import ensure_runtime_assets
 
 st.set_page_config(
     page_title="AI Credit Risk Platform",
     page_icon="◈",
     layout="wide",
 )
-
+ensure_runtime_assets()
 
 st.markdown(
     """
