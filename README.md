@@ -1333,6 +1333,11 @@ documents/project_presentation.pdf
 ```text
 https://github.com/Rajyasri24/AI-Credit-Risk-Platform
 ```
+# Live-Demo
+
+```text
+[https://github.com/Rajyasri24/AI-Credit-Risk-Platform](https://ai-credit-risk-platform-gsmcdfqxqps7syngxq2hqr.streamlit.app/)
+```
 
 ---
 
