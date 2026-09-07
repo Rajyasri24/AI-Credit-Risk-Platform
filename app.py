@@ -87,35 +87,27 @@ if (
     or "RISK_SCORE" not in df.columns
     or "RISK_BAND" not in df.columns
 ):
-    X = df[model_metadata["model_features"]].copy()
-    X_transformed = preprocessor.transform(X)
+    conn = sqlite3.connect(DATABASE_PATH)
 
-    margins = model.predict(
-        X_transformed,
-        output_margin=True,
+    risk_data = pd.read_sql_query(
+        """
+        SELECT
+            SK_ID_CURR,
+            MODEL_PD,
+            RISK_SCORE,
+            RISK_BAND
+        FROM credit_applicants
+        """,
+        conn,
     )
 
-    probabilities = (
-        model_metadata["calibrator"]
-        .predict_proba(margins.reshape(-1, 1))[:, 1]
+    conn.close()
+
+    df = df.merge(
+        risk_data,
+        on="SK_ID_CURR",
+        how="left",
     )
-
-    thresholds = model_metadata["risk_thresholds"]
-
-    def assign_risk_band(probability):
-        if probability <= thresholds["low_max"]:
-            return "Low"
-        if probability <= thresholds["medium_max"]:
-            return "Medium"
-        return "High"
-
-    df["MODEL_PD"] = probabilities
-    df["RISK_SCORE"] = probabilities * 100
-    df["RISK_BAND"] = [
-        assign_risk_band(probability)
-        for probability in probabilities
-    ]
-
 
 def run_chatbot_fallback(question):
     fallback_queries = {
