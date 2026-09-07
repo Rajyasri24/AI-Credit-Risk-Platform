@@ -4,9 +4,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+import sqlite3
+from src.utils.config import DATABASE_PATH
+
 from src.ml.predict import load_artifacts, predict_applicant
 from src.talk_to_data.nl_to_sql import ask_credit_data
-from src.utils.config import ANALYTICAL_DATA, METADATA_PATH
+from src.utils.config import (ANALYTICAL_DATA,DATABASE_PATH,METADATA_PATH,)
 
 
 st.set_page_config(
@@ -114,6 +117,154 @@ if (
         assign_risk_band(probability)
         for probability in probabilities
     ]
+
+
+def run_chatbot_fallback(question):
+    fallback_queries = {
+        "What is the observed default rate?": """
+            SELECT
+                COUNT(*) AS total_applicants,
+                SUM(TARGET) AS defaulted_applicants,
+                ROUND(AVG(TARGET) * 100, 2) AS default_rate_pct
+            FROM credit_applicants
+        """,
+
+        "How many applicants are in each risk band?": """
+            SELECT
+                RISK_BAND,
+                COUNT(*) AS applicants
+            FROM credit_applicants
+            GROUP BY RISK_BAND
+            ORDER BY
+                CASE RISK_BAND
+                    WHEN 'Low' THEN 1
+                    WHEN 'Medium' THEN 2
+                    WHEN 'High' THEN 3
+                    ELSE 4
+                END
+        """,
+
+        "What is the observed default rate for each risk band?": """
+            SELECT
+                RISK_BAND,
+                COUNT(*) AS applicants,
+                ROUND(AVG(TARGET) * 100, 2) AS observed_default_rate_pct
+            FROM credit_applicants
+            GROUP BY RISK_BAND
+            ORDER BY
+                CASE RISK_BAND
+                    WHEN 'Low' THEN 1
+                    WHEN 'Medium' THEN 2
+                    WHEN 'High' THEN 3
+                    ELSE 4
+                END
+        """,
+
+        "Compare historical late-payment behaviour across risk bands.": """
+            SELECT
+                RISK_BAND,
+                ROUND(AVG(LATE_PAYMENT_RATE) * 100, 2)
+                    AS average_late_payment_rate_pct
+            FROM credit_applicants
+            GROUP BY RISK_BAND
+            ORDER BY
+                CASE RISK_BAND
+                    WHEN 'Low' THEN 1
+                    WHEN 'Medium' THEN 2
+                    WHEN 'High' THEN 3
+                    ELSE 4
+                END
+        """,
+
+        "What is the average requested credit amount by risk band?": """
+            SELECT
+                RISK_BAND,
+                ROUND(AVG(AMT_CREDIT), 2) AS average_requested_credit
+            FROM credit_applicants
+            GROUP BY RISK_BAND
+            ORDER BY
+                CASE RISK_BAND
+                    WHEN 'Low' THEN 1
+                    WHEN 'Medium' THEN 2
+                    WHEN 'High' THEN 3
+                    ELSE 4
+                END
+        """,
+    }
+
+    sql = fallback_queries.get(question.strip())
+
+    if sql is None:
+        return None
+
+    with sqlite3.connect(DATABASE_PATH) as connection:
+        result = pd.read_sql_query(
+            sql,
+            connection,
+        )
+
+    if question == "What is the observed default rate?":
+        row = result.iloc[0]
+        answer = (
+            f"The observed historical default rate is "
+            f"{row['default_rate_pct']:.2f}% across "
+            f"{int(row['total_applicants']):,} applicants, "
+            f"with {int(row['defaulted_applicants']):,} historical defaults."
+        )
+
+    elif question == "How many applicants are in each risk band?":
+        parts = [
+            f"{row['RISK_BAND']}: {int(row['applicants']):,}"
+            for _, row in result.iterrows()
+        ]
+        answer = (
+            "Applicant distribution by risk band: "
+            + ", ".join(parts)
+            + "."
+        )
+
+    elif question == "What is the observed default rate for each risk band?":
+        parts = [
+            f"{row['RISK_BAND']}: "
+            f"{row['observed_default_rate_pct']:.2f}%"
+            for _, row in result.iterrows()
+        ]
+        answer = (
+            "Observed historical default rates by risk band are "
+            + ", ".join(parts)
+            + "."
+        )
+
+    elif question == "Compare historical late-payment behaviour across risk bands.":
+        parts = [
+            f"{row['RISK_BAND']}: "
+            f"{row['average_late_payment_rate_pct']:.2f}%"
+            for _, row in result.iterrows()
+        ]
+        answer = (
+            "Average historical late-payment rates by risk band are "
+            + ", ".join(parts)
+            + "."
+        )
+
+    else:
+        parts = [
+            f"{row['RISK_BAND']}: "
+            f"{row['average_requested_credit']:,.2f}"
+            for _, row in result.iterrows()
+        ]
+        answer = (
+            "Average requested credit by risk band is "
+            + ", ".join(parts)
+            + "."
+        )
+
+    return {
+        "answer": answer,
+        "sql": sql.strip(),
+        "result": result,
+        "fallback": True,
+    }
 
 
 with st.sidebar:
@@ -881,9 +1032,76 @@ else:
                 )
 
             except Exception as error:
-                st.error(
-                    f"Unable to answer the question: {error}"
+                error_text = str(error).lower()
+
+                is_rate_limit = (
+                    "429" in error_text
+                    or "quota" in error_text
+                    or "rate limit" in error_text
+                    or "too_many_requests" in error_text
                 )
+
+                fallback = (
+                    run_chatbot_fallback(question)
+                    if is_rate_limit
+                    else None
+                )
+
+                if fallback is not None:
+                    st.markdown(
+                        f"""
+                        <div class="answer-card">
+                        <b>Answer</b><br><br>
+                        {fallback["answer"]}
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                    if len(fallback["result"]) > 1:
+                        st.dataframe(
+                            fallback["result"],
+                            hide_index=True,
+                            use_container_width=True,
+                        )
+
+                    with st.expander("View Generated SQL"):
+                        st.code(
+                            fallback["sql"],
+                            language="sql",
+                        )
+
+                    st.caption(
+                        "AI query generation is temporarily rate-limited. "
+                        "This ready-made question was answered using its "
+                        "validated SQL fallback."
+                    )
+
+                    st.session_state[
+                        "chat_history"
+                    ].append(
+                        {
+                            "question": question,
+                            "answer": fallback["answer"],
+                        }
+                    )
+
+                    st.session_state[
+                        "chat_history"
+                    ] = st.session_state[
+                        "chat_history"
+                    ][-3:]
+
+                elif is_rate_limit:
+                    st.warning(
+                        "AI query generation is temporarily rate-limited. "
+                        "Please retry shortly or use one of the ready-made questions."
+                    )
+
+                else:
+                    st.error(
+                        f"Unable to answer the question: {error}"
+                    )
 
     if st.session_state["chat_history"]:
         st.subheader(
