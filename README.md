@@ -1,249 +1,165 @@
-# AI Credit Risk Intelligence Platform
+AI Credit Risk Intelligence Platform
 
-An end-to-end AI-powered credit risk decision-support platform built using the **Home Credit Default Risk** dataset.
+An end-to-end AI-powered credit risk decision-support platform built on the Home Credit Default Risk dataset. The solution integrates portfolio EDA, XGBoost-based default prediction, calibrated risk scoring, SHAP explainability, business-readable model rules, natural-language-to-SQL analytics, Streamlit, SQLite, and Docker in one modular application.
 
-The solution combines **data understanding, machine learning, explainable AI, natural-language-to-SQL analytics, a Streamlit interface, and Dockerized deployment** in one modular application.
+Overview
 
----
+Credit-risk teams need more than a binary prediction. They need to understand portfolio behaviour, identify higher-risk applicants, explain model decisions, and explore credit data without writing SQL for every question.
 
-## Overview
+The platform addresses this through three user-facing modules:
 
-Credit-risk teams need more than a prediction score. They need to understand portfolio behaviour, identify higher-risk applicants, explain model decisions, and explore credit data without depending on technical analysts for every question.
+EDA — portfolio intelligence, business insights, risk segmentation, data quality and visual analysis
 
-This platform supports those requirements through three user-facing modules:
+Machine Learning — probability of default, risk score, Low/Medium/High risk classification, SHAP explanations and ML-derived business rules
 
-- **EDA** — portfolio intelligence and business insights
-- **Machine Learning** — applicant default prediction, risk classification, and explainability
-- **Chatbot** — natural-language portfolio analysis backed by validated SQL
+Chatbot — natural-language portfolio questions translated into validated SQL and returned as readable business answers
 
-The application is designed as a **decision-support platform** rather than an autonomous loan approval or rejection system.
+The application is designed as a decision-support platform rather than an autonomous approval or rejection engine.
 
----
+Key Capabilities
 
-## Key Capabilities
+Area
 
-| Area | Capability |
-|---|---|
-| Data Understanding | Applicant, financial, bureau and repayment analysis |
-| Data Quality | Missing-value analysis, duplicate checks and feature categorization |
-| Business Insights | Five portfolio-level credit-risk insights with visualizations |
-| Default Prediction | XGBoost-based probability-of-default model |
-| Risk Scoring | Calibrated 0–100 model risk score |
-| Risk Classification | Low, Medium and High risk bands |
-| Explainable AI | Local and global SHAP explanations |
-| Business Rules | ML-derived interpretable decision patterns |
-| Talk-to-Data | Natural-language questions converted into SQL |
-| SQL Safety | Schema validation and read-only execution |
-| User Interface | Lightweight multi-section Streamlit application |
-| Deployment | Docker and Docker Compose |
+Capability
 
----
+Data Preparation
 
-## Dataset
+Application, bureau and installment data integrated at applicant level
 
-The project uses the **Home Credit Default Risk** dataset.
+EDA
 
-Required files:
+Business-focused portfolio analysis with five supporting visualizations
 
-```text
-application_train.csv
-application_test.csv
-bureau.csv
-installments_payments.csv
-```
+Default Prediction
 
-Place them inside:
+XGBoost probability-of-default model
 
-```text
-data/
-```
+Class Imbalance
 
-Expected structure:
+Stratified sampling + dynamic scale_pos_weight
 
-```text
+Probability Calibration
+
+Platt / sigmoid calibration
+
+Operating Threshold
+
+Selected on calibration data by maximizing F1
+
+Risk Segmentation
+
+Low, Medium and High model-derived risk bands
+
+Explainable AI
+
+Local and global SHAP
+
+Business Rules
+
+Shallow surrogate tree for readable model patterns
+
+Talk-to-Data
+
+Gemini-powered schema-grounded NL-to-SQL
+
+SQL Safety
+
+Read-only execution with SQLGlot validation
+
+Query Resilience
+
+Deterministic SQL fallback for the five core analytical questions
+
+User Interface
+
+Streamlit
+
+Deployment
+
+Docker and Docker Compose
+
+Dataset
+
+The project uses the Home Credit Default Risk dataset.
+
+Required source files:
+
 data/
 ├── application_train.csv
 ├── application_test.csv
 ├── bureau.csv
 └── installments_payments.csv
-```
 
-The raw dataset is intentionally **not stored in the GitHub repository**.
+The preprocessing pipeline converts the source data into a single applicant-level analytical dataset:
 
-### Source Tables
-
-| Dataset | Role |
-|---|---|
-| `application_train.csv` | Applicant profile, financial information and historical default target |
-| `application_test.csv` | Application records without the target column |
-| `bureau.csv` | Historical bureau credit information |
-| `installments_payments.csv` | Historical installment and repayment behaviour |
-
----
-
-## Analytical Dataset
-
-The preprocessing pipeline converts the source tables into a single applicant-level analytical dataset.
-
-| Property | Value |
-|---|---:|
-| Applicants | 307,511 |
-| Analytical Fields | 140 |
-| Unique Applicants | 307,511 |
-| Duplicate Applicants | 0 |
-| Observed Historical Default Rate | 8.07% |
-
-The analytical design maintains:
-
-```text
-One row = One applicant
-```
-
-Supporting tables such as bureau and installment-payment records contain multiple records per applicant. These are aggregated at:
-
-```text
-SK_ID_CURR
-```
-
-before being joined to the main application data.
-
-The resulting processed dataset is stored as:
-
-```text
 data/credit_applicants.parquet
-```
 
----
+Analytical Dataset Summary
 
-## Feature Categories
+Property
 
-The analytical data covers the major business dimensions required for credit-risk analysis.
+Value
 
-### Applicant Profile
+Applicants
 
-- age
-- family size
-- number of children
-- education
-- family status
-- housing type
+307,511
 
-### Financial Profile
+Analytical Fields
 
-- annual income
-- requested credit amount
-- loan annuity
-- goods price
-- credit-to-income ratio
-- annuity-to-income ratio
+140
 
-### Employment Profile
+Unique Applicants
 
-- employment duration
-- occupation type
-- organization type
-- employment-to-age ratio
+307,511
 
-### External Credit Indicators
+Duplicate Applicants
 
-```text
-EXT_SOURCE_1
-EXT_SOURCE_2
-EXT_SOURCE_3
-```
+0
 
-### Bureau Credit History
+Historical Default Rate
 
-- number of historical bureau credits
-- active credit count
-- closed credit count
-- overdue credit count
-- total historical credit
-- historical debt
-- historical overdue amount
+8.07%
 
-### Historical Repayment Behaviour
+All supporting tables are aggregated by SK_ID_CURR before joining, preserving:
 
-- installment count
-- average payment delay
-- maximum payment delay
-- historical late-payment rate
-- average payment ratio
+One row = One applicant
 
----
+The raw dataset is excluded from the repository.
 
-## Feature Engineering
+Data Preparation and Feature Engineering
 
-The preprocessing pipeline creates interpretable features that retain clear credit-risk meaning.
+The analytical layer combines application, bureau and repayment information.
 
-### Credit-to-Income Ratio
+Representative engineered features include:
 
-```text
-CREDIT_INCOME_RATIO =
-AMT_CREDIT / AMT_INCOME_TOTAL
-```
+AGE_YEARS
 
-Represents the requested credit relative to annual income.
+EMPLOYMENT_YEARS
 
-### Annuity-to-Income Ratio
+CREDIT_INCOME_RATIO
 
-```text
-ANNUITY_INCOME_RATIO =
-AMT_ANNUITY / AMT_INCOME_TOTAL
-```
+ANNUITY_INCOME_RATIO
 
-Represents repayment burden relative to income.
+CREDIT_GOODS_RATIO
 
-### Credit-to-Goods Ratio
+EMPLOYMENT_AGE_RATIO
 
-```text
-CREDIT_GOODS_RATIO =
-AMT_CREDIT / AMT_GOODS_PRICE
-```
+bureau credit counts, active/closed history, debt and overdue aggregates
 
-Represents how much of the purchase value is financed through credit.
-
-### Age
-
-```text
-AGE_YEARS =
-|DAYS_BIRTH| / 365.25
-```
-
-### Employment Duration
-
-```text
-EMPLOYMENT_YEARS =
-|DAYS_EMPLOYED| / 365.25
-```
+installment count, payment delay, late-payment rate and payment ratio
 
 The Home Credit sentinel value:
 
-```text
 DAYS_EMPLOYED = 365243
-```
 
-is treated as missing rather than as a valid employment duration.
+is treated as missing before employment duration is derived.
 
-### Employment-to-Age Ratio
+Processing Flow
 
-```text
-EMPLOYMENT_AGE_RATIO =
-EMPLOYMENT_YEARS / AGE_YEARS
-```
-
----
-
-## Data Processing Workflow
-
-```text
-Raw Home Credit Files
+Raw Home Credit Tables
         │
         ▼
-File Validation
-        │
-        ▼
-Data Cleaning
+Validation + Cleaning
         │
         ├── Application Features
         ├── Bureau Aggregation
@@ -257,400 +173,305 @@ Feature Engineering
         │
         ▼
 credit_applicants.parquet
-```
 
----
+Exploratory Data Analysis
 
-## Exploratory Data Analysis
+The EDA layer focuses on portfolio-level business interpretation rather than descriptive statistics alone.
 
-The EDA module focuses on business-relevant portfolio behaviour rather than only descriptive statistics.
+Key Business Insights
 
-It includes:
+Portfolio default level: historical default rate is approximately 8.07%, confirming a strongly imbalanced target.
 
-- dataset summary
-- data quality observations
-- feature categorization
-- five business insights
-- five supporting visualizations
+External credit profile: historical defaulters show lower median external credit indicators.
 
-### Business Insight 1 — Portfolio Default Level
+Employment stability: non-default applicants show longer median employment history.
 
-The observed historical default rate is approximately:
+Repayment behaviour: historical defaulters show higher late-payment behaviour.
 
-```text
-8.07%
-```
+Risk segmentation: observed default rates increase clearly from Low to Medium to High model risk.
 
-This confirms that the target variable is strongly imbalanced and requires imbalance-aware model training and evaluation.
+EDA Dashboard
 
-### Business Insight 2 — External Credit Indicators
+The Streamlit dashboard presents five core views:
 
-External credit indicators are lower among historical defaulters.
+Applicant Risk Classification
 
-For example:
+Observed Default Rate by Risk Level
 
-```text
-EXT_SOURCE_2
+External Credit Indicators
 
-Non-default median ≈ 0.574
-Default median     ≈ 0.440
-```
+Historical Late-Payment Behaviour
 
-### Business Insight 3 — Employment Stability
+Default Rate by Employment Tenure
 
-Median employment duration differs across historical outcomes:
+These views connect portfolio behaviour directly with the features later used in prediction and explanation.
 
-```text
-Non-default ≈ 4.63 years
-Default     ≈ 3.37 years
-```
+Machine Learning Approach
 
-### Business Insight 4 — Repayment Behaviour
+The prediction task is binary classification:
 
-Historical defaulters show a higher late-payment rate.
-
-```text
-Median Late-Payment Rate
-
-Non-default ≈ 1.6%
-Default     ≈ 4.8%
-```
-
-### Business Insight 5 — Model Risk Segmentation
-
-Applicants classified as Low, Medium and High risk show progressively different observed default behaviour, providing an interpretable portfolio segmentation layer.
-
-### Supporting Visualizations
-
-The EDA interface includes:
-
-1. Applicant Risk Classification
-2. Observed Default Rate by Risk Level
-3. External Credit Indicators
-4. Historical Late-Payment Behaviour
-5. Default Rate by Employment Tenure
-
-The charts are presented in a business-focused **3 + 2 dashboard layout**.
-
----
-
-## Machine Learning Approach
-
-The prediction task is formulated as binary classification.
-
-```text
 TARGET = 0 → Non-default
 TARGET = 1 → Default
-```
 
-### Selected Model
+Selected Model — XGBoost
 
-The primary predictive model is:
+XGBoost was selected because the problem consists of structured tabular credit data with:
 
-```text
-XGBoost Classifier
-```
+mixed numeric and categorical attributes
 
-XGBoost was selected because the dataset is structured tabular credit data containing:
+non-linear relationships
 
-- numeric variables
-- encoded categorical variables
-- non-linear relationships
-- feature interactions
-- missing information
-- significant class imbalance
+feature interactions
 
-XGBoost also integrates naturally with SHAP for explainability.
+missing information
 
----
+strong class imbalance
 
-## Model Feature Strategy
+a requirement for model explainability
 
-The model does not automatically consume every analytical field.
+XGBoost also integrates naturally with SHAP for both local and global explanations.
 
-A curated subset is selected using:
+Model Feature Strategy
 
-- prediction-time availability
-- business relevance
-- credit-risk domain coverage
-- data quality
-- interpretability
-- representation across application, bureau and repayment behaviour
+The model uses a curated feature subset rather than automatically consuming every analytical field.
 
-The broader analytical dataset remains available for EDA and Talk-to-Data analysis.
+Selection is based on:
 
----
+prediction-time availability
 
-## Model Preprocessing
+business relevance
 
-### Numeric Features
+credit-risk coverage
 
-Numeric fields use:
+data quality
 
-```text
+interpretability
+
+representation across application, bureau and repayment behaviour
+
+The wider analytical dataset remains available for EDA and Talk-to-Data.
+
+Preprocessing
+
+Numeric Features
+
 Median Imputation
-```
++ Missing-Value Indicators
 
-Missing-value indicators are retained so that the model can learn whether missingness itself contains predictive information.
+Missingness indicators are retained so the model can learn whether missing information itself has predictive value.
 
-### Categorical Features
+Categorical Features
 
-Categorical variables use:
-
-```text
-Missing value → "Unknown"
+Missing → "Unknown"
 One-Hot Encoding
 handle_unknown = ignore
-```
 
-This produces a consistent inference pipeline while allowing unseen categories to be handled safely.
+This keeps inference consistent while safely handling unseen categories.
 
----
-
-## Train, Calibration and Test Strategy
+Train, Calibration and Test Strategy
 
 The labelled dataset is split using stratified sampling.
 
-| Split | Usage |
-|---|---|
-| 70% | Model training |
-| 10% | Probability calibration and risk threshold definition |
-| 20% | Final model evaluation |
+Split
 
-The 20% test set is kept separate from model fitting and calibration.
+Purpose
 
----
+70%
 
-## Handling Class Imbalance
+XGBoost model training
 
-The historical default rate is approximately:
+10%
 
-```text
-8.07%
-```
+Probability calibration, operating-threshold selection, risk-band definition and SHAP-based explanatory feature selection
 
-Accuracy alone would therefore be misleading.
+20%
 
-The implementation uses two primary controls.
+Final untouched evaluation
 
-### Stratified Sampling
+The operating threshold is selected only on the calibration set by maximizing F1. The test set remains independent of fitting, calibration and threshold selection.
 
-The class distribution is maintained across train, calibration and test splits.
+Handling Class Imbalance
 
-### XGBoost Class Weighting
+The default class represents only about 8% of the labelled portfolio, so accuracy alone would not be meaningful.
 
-The minority default class is weighted dynamically using:
+The pipeline handles imbalance through:
 
-```text
-scale_pos_weight =
-Number of Non-default Applicants
-/
-Number of Default Applicants
-```
+stratified train/calibration/test splitting
 
-This approach improves minority-class learning without creating synthetic applicant records.
+dynamic XGBoost scale_pos_weight
 
----
+calibration-set operating-threshold selection
 
-## Model Evaluation
+This gives the minority default class greater learning importance without generating synthetic applicant records.
 
-The final evaluation is performed using the untouched 20% test set.
+Final Model Evaluation
 
-The following metrics are calculated:
+Evaluation is performed only on the untouched 20% test set.
 
-| Metric | Purpose |
-|---|---|
-| ROC-AUC | Measures overall ranking quality |
-| PR-AUC | Focuses on the minority default class |
-| Precision | Measures correctness of positive default predictions |
-| Recall | Measures coverage of actual defaults |
-| F1 Score | Balances precision and recall |
-| Brier Score | Evaluates quality of predicted probabilities |
-| Confusion Matrix | Shows classification outcomes |
+Metric
 
-The final trained model metrics are stored in:
+Result
 
-```text
-models/model_metadata.joblib
-```
+ROC-AUC
 
-and the primary metrics are displayed directly in the **Machine Learning** section of the application.
+0.7645
 
----
+PR-AUC
 
-## Probability Calibration
+0.2586
 
-The system exposes probability of default directly to users, so probability quality is important in addition to classification performance.
+PR-AUC Lift
 
-The raw XGBoost output is calibrated using:
+3.20×
 
-```text
-Platt / Sigmoid Calibration
-```
+Precision
 
-on the dedicated calibration split.
+0.2541
 
-The calibrated probability is stored as:
+Recall
 
-```text
-MODEL_PD
-```
+0.4109
 
----
+F1 Score
 
-## Risk Score
+0.3140
 
-The user-facing risk score is calculated as:
+Brier Score
 
-```text
-Risk Score = MODEL_PD × 100
-```
+0.0672
 
-Example:
+Operating Threshold
 
-```text
-Probability of Default = 0.124
+0.1562
 
-Risk Score = 12.4 / 100
-```
+Risk-Band Validation
 
-This is a **model-generated risk score**, not a bureau credit score.
+Risk Band
 
----
+Applicants
 
-## Risk Classification
+Observed Default Rate
 
-Applicants are classified into:
+Average Predicted Default
 
-```text
+Low
+
+20,437
+
+2.070%
+
+2.089%
+
+Medium
+
+20,981
+
+5.481%
+
+5.531%
+
+High
+
+20,085
+
+16.888%
+
+16.547%
+
+The progression from Low to High risk demonstrates clear portfolio separation, while the close agreement between observed and predicted rates supports calibrated risk interpretation.
+
+Probability Calibration and Risk Scoring
+
+Raw XGBoost decision scores are calibrated using Platt / sigmoid calibration on the dedicated calibration split.
+
+The user-facing model risk score is:
+
+Risk Score = Probability of Default × 100
+
+Applicants are grouped into:
+
 Low
 Medium
 High
-```
 
-risk categories.
+risk bands derived from the calibrated probability distribution.
 
-Risk thresholds are derived from the calibrated probability distribution.
+These bands represent relative portfolio risk segments rather than hard-coded approval policies.
 
-The categories therefore provide relative portfolio risk segmentation rather than hard-coded approval rules.
+Explainable AI
 
----
+The application uses SHAP to make predictions interpretable.
 
-## Explainable AI
-
-The application uses:
-
-```text
-SHAP
-```
-
-to explain model behaviour.
-
-### Local Explainability
+Local Explainability
 
 For an individual applicant, the system shows:
 
-- probability of default
-- risk score
-- risk classification
-- major contributing factors
-- whether each factor increases or reduces predicted risk
-- SHAP contribution visualization
+probability of default
 
-Example interpretation:
+risk score
 
-```text
-External Credit Indicator → Reduces predicted risk
-Late-Payment Behaviour    → Increases predicted risk
-Employment History        → Reduces predicted risk
-```
+risk classification
 
-This converts technical model contributions into language understandable to non-technical users.
+major contributing factors
 
-### Global Explainability
+whether each factor increases or reduces predicted risk
 
-Global SHAP feature importance identifies the variables that most strongly influence XGBoost predictions across the full portfolio.
+SHAP contribution chart
 
-This allows stakeholders to understand the dominant drivers of model behaviour at portfolio level.
+Global Explainability
 
----
+Global SHAP feature importance identifies the variables with the strongest influence across model predictions.
 
-## ML-Derived Business Rules
+The current portfolio view highlights features such as:
 
-The primary prediction continues to come from XGBoost.
+EXT_SOURCE_2
 
-A shallow surrogate decision tree is used internally only to summarize common XGBoost decision patterns.
+EXT_SOURCE_3
 
-```text
-Trained XGBoost
-      │
-      ▼
-Model Probability Predictions
-      │
-      ▼
-Influential Features
-      │
-      ▼
-Shallow Decision Tree
-      │
-      ▼
-Readable Decision Patterns
-```
+EXT_SOURCE_1
 
-The resulting patterns are presented in the application as:
+CREDIT_GOODS_RATIO
 
-```text
+BUREAU_DEBT_SUM
+
+AMT_ANNUITY
+
+LATE_PAYMENT_RATE
+
+age and employment tenure
+
+Global explanatory feature selection uses calibration data, preserving the test set for final evaluation.
+
+ML-Derived Business Rules
+
+A shallow surrogate decision tree summarizes common XGBoost decision patterns into readable rules:
+
 IF business conditions
 THEN approximate model probability of default
-```
 
-The surrogate tree does not replace the primary model and is not used for applicant-level final prediction.
+The XGBoost model remains the source of final applicant-level predictions.
 
----
+Talk-to-Data
 
-## Talk-to-Data System
+The platform includes a natural-language analytics assistant powered by Gemini.
 
-The platform includes an LLM-powered chatbot that allows users to ask analytical questions using plain English.
+Users can ask analytical questions such as:
 
-Users can either:
-
-- select a ready-made question
-- enter a custom business question
-
-Example questions include:
-
-```text
 What is the observed default rate?
-```
-
-```text
 How many applicants are in each risk band?
-```
-
-```text
 What is the observed default rate for each risk band?
-```
-
-```text
 Compare historical late-payment behaviour across risk bands.
-```
-
-```text
 What is the average requested credit amount by risk band?
-```
 
----
+NL-to-SQL Workflow
 
-## Talk-to-Data Workflow
-
-```text
 Natural-Language Question
         │
         ▼
-Prompt Construction
+Schema-Grounded Prompt
         │
         ▼
-Gemini LLM
+Gemini
         │
         ▼
 SQL Generation
@@ -666,282 +487,333 @@ Query Result
         │
         ▼
 Business-Readable Answer
-```
 
----
+Prompt Engineering
 
-## LLM Integration
+The generation prompt includes:
 
-The Talk-to-Data component uses the **Gemini API** through the Google GenAI SDK.
+approved analytical schema
 
-The configured LLM model is supplied using:
+business descriptions of key fields
 
-```env
-LLM_MODEL=gemini-3.6-flash
-```
+distinction between observed outcome (TARGET) and predicted probability (MODEL_PD)
 
-Direct SDK integration keeps the following components explicit:
+five representative few-shot query patterns
 
-- prompt construction
-- schema grounding
-- SQL validation
-- bounded repair
-- result summarization
-- conversation context
+SQL safety constraints
 
----
+recent conversation context only
 
-## Prompt Engineering
+This keeps the model grounded in the available data and limits unnecessary token usage.
 
-The SQL-generation prompt includes:
+SQL Safety and Result Grounding
 
-- approved database schema
-- business descriptions of important columns
-- SQL safety constraints
-- distinction between historical and predicted risk
-- five representative few-shot query patterns
-- recent conversation context
+Generated SQL is validated before execution.
 
-Two fields are deliberately separated:
+The validation layer enforces:
 
-```text
-TARGET
-```
+exactly one SQL statement
 
-represents the **observed historical default outcome**.
+SELECT-only access
 
-```text
-MODEL_PD
-```
+approved table name
 
-represents the **model-predicted probability of default**.
+approved schema columns
 
-This prevents observed performance and predicted risk from being mixed in analytical answers.
+no destructive operations
 
----
-
-## Hallucination Control and SQL Safety
-
-Generated SQL is never executed directly.
-
-The validation layer checks:
-
-- exactly one SQL statement
-- SELECT-only access
-- approved table name
-- approved schema columns
-- no destructive operations
-- read-only database execution
+read-only SQLite execution
 
 Blocked operations include:
 
-```text
 INSERT
 UPDATE
 DELETE
 DROP
 CREATE
 ALTER
-```
 
-The chatbot operates against:
+Business answers are generated only after validated SQL executes successfully and are grounded in the returned values.
 
-```text
-credit_applicants
-```
+A single bounded repair attempt is available for a rejected query; there is no unrestricted autonomous retry loop.
 
-inside:
+Deterministic SQL Fallback Strategy
 
-```text
-data/credit_risk.db
-```
+The five core analytical questions also have a deterministic SQL path.
 
-Detailed non-aggregate queries are bounded to prevent unnecessarily large responses.
+User Question
+      │
+      ▼
+Gemini NL-to-SQL
+      │
+      ├── Standard Path
+      │       ↓
+      │   Validated SQL
+      │       ↓
+      │    SQLite
+      │       ↓
+      │ Business Answer
+      │
+      └── Core-Query Fallback
+              ↓
+        Prevalidated SQL Template
+              ↓
+            SQLite
+              ↓
+      Deterministic Business Answer
 
-Aggregate analytical queries operate across the required portfolio data.
+The fallback covers the five predefined portfolio questions and uses only prevalidated read-only SQL.
 
----
+This provides two complementary behaviours:
 
-## Bounded SQL Repair
+flexibility for custom analytical questions through Gemini
 
-If generated SQL fails validation or execution, the system permits one controlled correction attempt.
+deterministic continuity for the platform's five core business questions
 
-The repair prompt receives:
+No second LLM provider or additional dependency is introduced.
 
-- the original user question
-- rejected SQL
-- validation or execution feedback
-- approved database schema
+Application Interface
 
-There is no unrestricted autonomous retry loop.
-
----
-
-## Result Grounding
-
-Business responses are generated only after validated SQL has been executed.
-
-The summarization prompt instructs the LLM to:
-
-- use only returned query values
-- avoid inventing causes
-- distinguish observed historical outcomes from predicted risk
-- avoid treating SQL output limits as analytical sample sizes
-
----
-
-## Prompt and Token Optimization
-
-The Talk-to-Data workflow keeps model context intentionally compact.
-
-Token usage is controlled through:
-
-- a curated analytical SQL schema
-- concise field descriptions
-- five reusable few-shot examples
-- only recent conversation turns
-- one bounded repair attempt
-- database-side aggregation
-- sending only query results to the LLM rather than the complete dataset
-
-The full 307,511-row analytical dataset is therefore never passed directly to the language model.
-
----
-
-## Application Interface
-
-The Streamlit application contains three sections.
-
-### 1. EDA
+1. EDA
 
 Provides:
 
-- portfolio KPIs
-- five business insights
-- five supporting charts
-- feature categorization
-- data-quality summary
+portfolio KPIs
 
-### 2. Machine Learning
+five business insights
 
-Provides:
+five supporting charts
 
-- model performance
-- applicant probability of default
-- risk score
-- Low / Medium / High classification
-- applicant financial profile
-- local SHAP explanation
-- global SHAP importance
-- ML-derived business rules
+feature categorization
 
-### 3. Chatbot
+data-quality summary
+
+2. Machine Learning
 
 Provides:
 
-- ready-made analytical questions
-- custom natural-language questions
-- readable business answers
-- supporting query results
-- optional generated SQL view
+final test-set model performance
 
----
+test-set risk-band validation
 
-## System Architecture
+applicant probability of default
 
-```text
+model risk score
+
+Low / Medium / High risk classification
+
+applicant profile
+
+local SHAP explanation
+
+global SHAP importance
+
+ML-derived business rules
+
+3. Chatbot
+
+Provides:
+
+five ready-made analytical questions
+
+custom natural-language questions
+
+readable business answers
+
+supporting query results
+
+optional generated SQL view
+
+deterministic SQL support for the five core questions
+
+System Architecture
+
 Home Credit Source Data
         │
         ▼
-Data Loading
+Data Validation + Loading
         │
         ▼
-Cleaning + Feature Engineering
+Cleaning + Aggregation + Feature Engineering
         │
         ▼
 Applicant-Level Analytical Dataset
         │
-        ├─────────────────────┐
-        │                     │
-        ▼                     ▼
-      EDA                ML Training
-                              │
-                              ▼
-                         XGBoost Model
-                              │
-                    ┌─────────┴─────────┐
-                    ▼                   ▼
-              Calibration            SHAP
-                    │                   │
-                    ▼                   ▼
-              Risk Score         Explanations
-                    │
-                    ▼
-               Risk Band
+        ├──────────────────────┐
+        │                      │
+        ▼                      ▼
+       EDA                 ML Pipeline
+                               │
+                               ▼
+                            XGBoost
+                               │
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+             Platt Calibration           SHAP
+                    │                     │
+                    ▼                     ▼
+           PD + Risk Score/Bands    Explanations
         │
-        └─────────────────────┐
-                              │
-                              ▼
+        └──────────────────────┐
+                               ▼
                          SQLite Database
-                              │
-                              ▼
-                        Gemini NL-to-SQL
-                              │
-                              ▼
-                       SQL Validation
-                              │
-                              ▼
-                       Business Answer
-                              │
-             ┌────────────────┴───────────────┐
-             ▼                                ▼
-        Machine Learning                   Chatbot
-             │                                │
-             └──────────────┬─────────────────┘
-                            ▼
-                       Streamlit UI
-```
+                               │
+                   ┌───────────┴───────────┐
+                   ▼                       ▼
+             Gemini NL-to-SQL       Core SQL Fallback
+                   │                       │
+                   ▼                       │
+             SQL Validation               │
+                   └───────────┬───────────┘
+                               ▼
+                       Read-Only Execution
+                               │
+                               ▼
+                      Business-Readable Answer
+                               │
+                               ▼
+                         Streamlit Interface
 
----
+Major Design Decisions
 
-## Major Design Decisions
+Decision
 
-| Decision | Selected Approach | Reason |
-|---|---|---|
-| Predictive Model | XGBoost | Strong tabular-data performance and SHAP compatibility |
-| Imbalance Handling | `scale_pos_weight` | Handles minority defaults without synthetic applicants |
-| Data Split | 70 / 10 / 20 | Separates training, calibration and final evaluation |
-| Probability Calibration | Platt calibration | Produces user-facing probability estimates |
-| Explainability | SHAP | Supports local and global explanations |
-| Business Rules | Shallow surrogate tree | Converts model behaviour into readable patterns |
-| Analytical Database | SQLite | Lightweight and reproducible |
-| LLM | Gemini | Supports schema-grounded NL-to-SQL generation |
-| LLM Integration | Google GenAI SDK | Keeps validation and prompt logic transparent |
-| Interface | Streamlit | Lightweight end-to-end demonstration |
-| Deployment | Docker Compose | Reproducible one-command execution |
+Selected Approach
 
----
+Rationale
 
-## Technology Stack
+Predictive Model
 
-| Layer | Technologies |
-|---|---|
-| Programming | Python |
-| Data Processing | Pandas, NumPy |
-| Machine Learning | Scikit-learn, XGBoost |
-| Explainability | SHAP |
-| Data Storage | Parquet, SQLite |
-| SQL Validation | SQLGlot |
-| Generative AI | Gemini API |
-| User Interface | Streamlit |
-| Artifact Persistence | Joblib |
-| Deployment | Docker, Docker Compose |
+XGBoost
 
----
+Strong performance on structured tabular data and SHAP compatibility
 
-## Project Structure
+Imbalance Handling
 
-```text
+scale_pos_weight + stratified splits
+
+Improves minority-default learning without synthetic records
+
+Data Split
+
+70 / 10 / 20
+
+Separates training, calibration and final evaluation
+
+Probability Calibration
+
+Platt calibration
+
+Supports interpretable user-facing default probabilities
+
+Operating Threshold
+
+Calibration-set F1 maximization
+
+Provides an imbalance-aware classification operating point
+
+Risk Bands
+
+Calibration-distribution thresholds
+
+Creates relative Low / Medium / High portfolio segmentation
+
+Explainability
+
+SHAP
+
+Supports local and global explanations
+
+Business Rules
+
+Shallow surrogate tree
+
+Converts model behaviour into readable patterns
+
+Analytical Database
+
+SQLite
+
+Lightweight and reproducible
+
+LLM
+
+Gemini
+
+Supports schema-grounded NL-to-SQL generation
+
+SQL Validation
+
+SQLGlot
+
+Enforces safe analytical SQL
+
+Core Query Resilience
+
+Prevalidated SQL templates
+
+Keeps five business-critical analytical paths deterministic
+
+Interface
+
+Streamlit
+
+Lightweight end-to-end application
+
+Deployment
+
+Docker Compose
+
+Reproducible execution
+
+Technology Stack
+
+Layer
+
+Technologies
+
+Programming
+
+Python
+
+Data Processing
+
+Pandas, NumPy
+
+Machine Learning
+
+Scikit-learn, XGBoost
+
+Explainability
+
+SHAP
+
+Data Storage
+
+Parquet, SQLite
+
+SQL Validation
+
+SQLGlot
+
+Generative AI
+
+Gemini API, Google GenAI SDK
+
+User Interface
+
+Streamlit
+
+Artifact Persistence
+
+Joblib
+
+Deployment
+
+Docker, Docker Compose
+
+Project Structure
+
 credit_risk_platform/
 ├── data/
 ├── documents/
@@ -980,358 +852,85 @@ credit_risk_platform/
 ├── .env.example
 ├── .gitignore
 └── README.md
-```
 
----
+Installation
 
-# Installation and Setup
+1. Clone
 
-## 1. Clone the Repository
-
-```bash
 git clone https://github.com/Rajyasri24/AI-Credit-Risk-Platform.git
-```
-
-```bash
 cd AI-Credit-Risk-Platform
-```
 
----
+2. Create Environment
 
-## 2. Create a Virtual Environment
+Windows:
 
-### Windows
-
-```bash
 py -3.11 -m venv .venv
-```
-
-```bash
 .venv\Scripts\activate
-```
 
-### Linux / macOS
+Linux / macOS:
 
-```bash
 python3.11 -m venv .venv
-```
-
-```bash
 source .venv/bin/activate
-```
 
----
+Install dependencies:
 
-## 3. Install Dependencies
-
-```bash
 pip install -r requirements.txt
-```
 
----
+3. Add Dataset
 
-## 4. Add the Dataset
+Place the required Home Credit files inside data/.
 
-Place the required Home Credit files inside:
+4. Configure Environment
 
-```text
-data/
-```
+Create .env from .env.example:
 
-Required:
-
-```text
-application_train.csv
-application_test.csv
-bureau.csv
-installments_payments.csv
-```
-
----
-
-## 5. Configure Environment Variables
-
-Create:
-
-```text
-.env
-```
-
-using:
-
-```text
-.env.example
-```
-
-Add:
-
-```env
 GEMINI_API_KEY=your_api_key
 LLM_MODEL=gemini-3.6-flash
-```
 
-The real `.env` file must not be committed to Git.
+Run Locally
 
----
+Build the analytical dataset:
 
-# Running the Project
-
-## Step 1 — Build the Analytical Dataset
-
-```bash
 python -m src.data.preprocessor
-```
 
-Generated file:
+Train and persist the model:
 
-```text
-data/credit_applicants.parquet
-```
-
----
-
-## Step 2 — Train the Model
-
-```bash
 python -m src.ml.train
-```
 
-Generated model artifacts are stored inside:
+Build the analytical database:
 
-```text
-models/
-```
-
----
-
-## Step 3 — Build the Analytical Database
-
-```bash
 python -m src.talk_to_data.query_runner
-```
 
-Generated database:
+Start the application:
 
-```text
-data/credit_risk.db
-```
-
----
-
-## Step 4 — Start the Application
-
-```bash
 streamlit run app.py
-```
 
 Open:
 
-```text
 http://localhost:8501
-```
 
----
+Run with Docker
 
-# Docker Deployment
-
-The application can be executed through Docker Compose.
-
-Ensure that:
-
-- the required Home Credit data files are inside `data/`
-- `.env` contains the Gemini API credentials
-- model artifacts are available inside `models/`
-
-Run:
-
-```bash
 docker compose up --build
-```
 
 Open:
 
-```text
 http://localhost:8501
-```
 
-Stop the application using:
+Stop:
 
-```bash
 docker compose down
-```
 
----
+Generated Artifacts
 
-# User Guide
-
-## EDA
-
-Open the **EDA** section to review:
-
-- total applicants
-- historical default rate
-- requested credit exposure
-- high-risk portfolio share
-- five business insights
-- five portfolio charts
-- dataset summary
-- data quality
-- feature categories
-
----
-
-## Machine Learning
-
-Open **Machine Learning** and enter a valid:
-
-```text
-SK_ID_CURR
-```
-
-The application returns:
-
-```text
-Probability of Default
-Risk Score
-Risk Classification
-```
-
-The same page provides:
-
-- applicant financial context
-- local SHAP explanation
-- portfolio-level SHAP importance
-- ML-derived business rules
-
----
-
-## Chatbot
-
-Open **Chatbot**.
-
-Either:
-
-1. select a ready-made question, or
-2. enter a custom portfolio question.
-
-Example:
-
-```text
-What is the observed default rate for each risk band?
-```
-
-The application:
-
-```text
-Question
-   ↓
-NL-to-SQL
-   ↓
-SQL Validation
-   ↓
-Database Execution
-   ↓
-Readable Business Answer
-```
-
-Generated SQL can be viewed from the optional SQL section.
-
----
-
-## Sample Talk-to-Data Output
-
-### Question
-
-```text
-What is the observed default rate?
-```
-
-### SQL
-
-```sql
-SELECT
-    COUNT(*) AS total_applicants,
-    SUM(TARGET) AS defaulted_applicants,
-    ROUND(AVG(TARGET) * 100, 2) AS default_rate_pct
-FROM credit_applicants;
-```
-
-### Business Result
-
-```text
-Observed Historical Default Rate: 8.07%
-```
-
----
-
-## Environment Variables
-
-| Variable | Purpose |
-|---|---|
-| `GEMINI_API_KEY` | Authentication for Gemini |
-| `LLM_MODEL` | Gemini model used by Talk-to-Data |
-
-Example:
-
-```env
-GEMINI_API_KEY=your_api_key
-LLM_MODEL=gemini-3.6-flash
-```
-
----
-
-## Generated Artifacts
-
-### Processed Data
-
-```text
 data/credit_applicants.parquet
 data/credit_risk.db
-```
 
-### Model Artifacts
-
-```text
 models/xgboost_model.joblib
 models/preprocessor.joblib
 models/model_metadata.joblib
 models/surrogate_model.joblib
-```
 
----
+Repository
 
-## Future Enhancements
-
-Potential production extensions include:
-
-- organization-defined credit policy thresholds
-- user authentication and role-based access
-- model monitoring and drift detection
-- centralized model registry
-- automated retraining workflows
-- cloud-hosted analytical database
-- additional credit-history sources
-- portfolio monitoring dashboards
-- persistent governed conversation history
-
----
-
-## Repository
-
-```text
 https://github.com/Rajyasri24/AI-Credit-Risk-Platform
-```
-
----
-
-## Run Locally
-
-```bash
-streamlit run app.py
-```
-
-## Run with Docker
-
-```bash
-docker compose up --build
-```
