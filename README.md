@@ -1333,12 +1333,9 @@ documents/project_presentation.pdf
 ```text
 https://github.com/Rajyasri24/AI-Credit-Risk-Platform
 ```
-# Live-Demo
+## Live Demo
 
-```text
-[https://github.com/Rajyasri24/AI-Credit-Risk-Platform](https://ai-credit-risk-platform-gsmcdfqxqps7syngxq2hqr.streamlit.app/)
-```
-
+[Launch the AI Credit Risk Intelligence Platform](https://ai-credit-risk-platform-gsmcdfqxqps7syngxq2hqr.streamlit.app/)
 ---
 
 # Author
